@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using Rect = OpenCvSharp.Rect;
 
 namespace SatGS.ObjectDetection
 {
@@ -85,19 +86,36 @@ namespace SatGS.ObjectDetection
 
 
 
-            Cv2.FindContours(binaryImage, out var contours, out var hierachy, RetrievalModes.Tree, ContourApproximationModes.ApproxTC89KCOS);
+            Cv2.FindContours(binaryImage, out var contours, out _, RetrievalModes.Tree, ContourApproximationModes.ApproxTC89KCOS);
 
             //var newCountours = new List<OpenCvSharp.Point[]>();
 
             var imgSize = image.Size();
 
+            Rect? finalRect = null;
+
             foreach (var p in contours)
             {
                 var length = Cv2.ArcLength(p, true);
-                var contourSize = Cv2.BoundingRect(p).Size;
+                var rect = Cv2.BoundingRect(p);
+                var contourSize = rect.Size;
                 if (length > 100 && imgSize != contourSize)
-                    Cv2.Rectangle(image, Cv2.BoundingRect(p), Scalar.Red, 2, LineTypes.AntiAlias);
+                {
+                    if(finalRect == null)
+                    {
+                        finalRect = rect;
+                    }
+                    else
+                    {
+                        var tmp = finalRect.Value;
+                        tmp |= rect;
+                        finalRect = tmp;
+                    }
+                }
+                    //Cv2.Rectangle(image, Cv2.BoundingRect(p), Scalar.Red, 2, LineTypes.AntiAlias);
             }
+
+            Cv2.Rectangle(image, finalRect.Value, Scalar.Green, 2, LineTypes.AntiAlias);
 
             //Cv2.DrawContours(image, newCountours, -1, Scalar.Red, 2, LineTypes.AntiAlias, null, 1);
 
@@ -109,35 +127,58 @@ namespace SatGS.ObjectDetection
             return ContourDetectionFromImage(new Mat(imagePath));
         }
 
-        public BitmapSource DetectContourOfRedObjects(string imagePath)
+        public bool DetectContourOfRedObjects(string imagePath, out Rect? contourRect, out BitmapSource bitmapSource)
         {
-            return DetectContourOfRedObjects(new Mat(imagePath));
+            return DetectContourOfRedObjects(new Mat(imagePath), out contourRect, out bitmapSource);
         }
 
-        public BitmapSource DetectContourOfRedObjects(Mat image)
+        public bool DetectContourOfRedObjects(Mat image, out Rect? contourRect, out BitmapSource bitmapSource)
         {
             var ranged_image = new Mat();
-            var lower = InputArray.Create(new[] { 0, 0, 128 });
+            var lower = InputArray.Create(new[] { 0, 0, 110 });
             var upper = InputArray.Create(new[] { 100, 100, 255 });
             Cv2.InRange(image, lower, upper, ranged_image);
 
             var contours = GetContourFromBinaryImage(ranged_image);
-
-            Cv2.ImShow("a", ranged_image);
-
             var imageSize = image.Size();
+
+            Rect? finalRect = null;
 
             foreach (var contour in contours)
             {
+                var rect = Cv2.BoundingRect(contour);
                 var length = Cv2.ArcLength(contour, true);
-                var contourSize = Cv2.BoundingRect(contour).Size;
+                var contourSize = rect.Size;
                 if (length > 200 && imageSize != contourSize)
                 {
-                    Cv2.Rectangle(image, Cv2.BoundingRect(contour), Scalar.Green, 2, LineTypes.AntiAlias);
+                    if(finalRect == null)
+                    {
+                        finalRect = rect;
+                    }
+                    else
+                    {
+                        var tmp = finalRect.Value;
+                        tmp |= rect;
+                        finalRect = tmp;
+                    }
                 }
             }
 
-            return image.ToBitmapSource();
+            if(finalRect == null)
+            {
+                contourRect = null;
+                bitmapSource = image.ToBitmapSource();
+
+                return false;
+            }
+            else
+            {
+                contourRect = finalRect;
+                Cv2.Rectangle(image, finalRect.Value, Scalar.Green, 2, LineTypes.AntiAlias);
+                bitmapSource = image.ToBitmapSource();
+
+                return true;
+            }
         }
     }
 }
